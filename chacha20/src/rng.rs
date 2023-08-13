@@ -96,7 +96,7 @@ macro_rules! generate_rng {
                     let mut o = [self.counter as u8; U32_BITS];
                     self.cipher.apply_keystream(&mut o);
                     results[i] = as_u32(&o);
-                    self.counter += 1;
+                    self.counter += 1 + o.as_slice()[0] as u64;
                 }
             }
         }
@@ -210,7 +210,8 @@ mod tests {
     fn same_seed() {
         let mut rng = ChaCha20Rng::from_seed([0u8; 32]);
         let mut rng2 = ChaCha20Rng::from_seed([0u8; 32]);
-
+        rng.next_u32();
+        rng2.next_u32();
         assert_ne!(rng.next_u32(), rng2.next_u32());
     }
 }
