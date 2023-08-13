@@ -127,6 +127,16 @@ mod backends;
 mod legacy;
 mod xchacha;
 
+#[cfg(feature = "rng")]
+#[cfg_attr(docsrs, doc(cfg(feature = "rng")))]
+mod rng;
+#[cfg(feature = "rng")]
+#[cfg_attr(docsrs, doc(cfg(feature = "rng")))]
+pub use rng::{
+    ChaCha12Rng, ChaCha12RngCore, ChaCha20Rng, ChaCha20RngCore, ChaCha8Rng, ChaCha8RngCore,
+    XChaCha12Rng, XChaCha12RngCore, XChaCha20Rng, XChaCha20RngCore, XChaCha8Rng, XChaCha8RngCore,
+};
+
 pub use legacy::{ChaCha20Legacy, ChaCha20LegacyCore, LegacyNonce};
 pub use xchacha::{hchacha, XChaCha12, XChaCha20, XChaCha8, XChaChaCore, XNonce};
 
@@ -231,6 +241,7 @@ impl<R: Unsigned> KeyIvInit for ChaChaCore<R> {
                     }
                 }
             } else {
+                #[allow(clippy::let_unit_value)]
                 let tokens = ();
             }
         }
