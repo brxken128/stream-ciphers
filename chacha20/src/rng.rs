@@ -1,5 +1,6 @@
 use crate::{ChaCha12, ChaCha20, ChaCha8, XChaCha12, XChaCha20, XChaCha8, STATE_WORDS};
 use cipher::{KeyIvInit, StreamCipher};
+use core::mem;
 use rand_core::{
     block::{BlockRng, BlockRngCore},
     CryptoRng, RngCore, SeedableRng,
@@ -9,19 +10,6 @@ use rand_core::{
 use cipher::zeroize::ZeroizeOnDrop;
 
 const KEY_LEN: usize = 32;
-const U32_BITS: usize = 16;
-
-/// Used for converting an LE `&[u8; 16]` into a `u32` value.
-#[cfg(target_endian = "little")]
-fn as_u32(v: &[u8; U32_BITS]) -> u32 {
-    (v[0] as u32) | ((v[1] as u32) << 8) | ((v[2] as u32) << 16) | ((v[3] as u32) << 24)
-}
-
-/// Used for converting a BE `&[u8; 16]` into a `u32` value.
-#[cfg(target_endian = "big")]
-fn as_u32(v: &[u8; U32_BITS]) -> u32 {
-    ((v[0] as u32) << 24) | ((v[1] as u32) << 16) | ((v[2] as u32) << 8) | (v[3] as u32)
-}
 
 macro_rules! generate_rng {
     ($cipher:ident, $name:ident, $core:ident, $iv_len:expr) => {
@@ -90,26 +78,14 @@ macro_rules! generate_rng {
             counter: u64,
         }
 
-        impl $core {
-            #[doc = "Apply a "]
-            #[doc = stringify!($cipher)]
-            #[doc = " keystream 4 times over a mutable buffer"]
-            #[inline]
-            fn apply_keystream_4(&mut self, buf: &mut [u8]) {
-                (0..4).for_each(|_| self.cipher.apply_keystream(buf))
-            }
-        }
-
         impl SeedableRng for $core {
             type Seed = [u8; KEY_LEN];
 
             #[inline]
             #[must_use]
             fn from_seed(seed: Self::Seed) -> Self {
-                let iv = [0u8; $iv_len];
-
                 Self {
-                    cipher: $cipher::new(&seed.into(), &iv.into()),
+                    cipher: $cipher::new(&seed.into(), &[0u8; $iv_len].into()),
                     counter: 0,
                 }
             }
@@ -121,10 +97,10 @@ macro_rules! generate_rng {
 
             #[inline]
             fn generate(&mut self, results: &mut Self::Results) {
+                let mut o = [self.counter as u8; mem::size_of::<Self::Item>()];
                 for i in 0..STATE_WORDS {
-                    let mut o = [self.counter as u8; U32_BITS];
-                    self.apply_keystream_4(&mut o);
-                    results[i] = as_u32(&o);
+                    self.cipher.apply_keystream(&mut o);
+                    results[i] = Self::Item::from_le_bytes(o);
                     self.counter += 1;
                 }
             }
@@ -146,32 +122,6 @@ generate_rng!(ChaCha20, ChaCha20Rng, ChaCha20RngCore, 12);
 generate_rng!(XChaCha8, XChaCha8Rng, XChaCha8RngCore, 24);
 generate_rng!(XChaCha12, XChaCha12Rng, XChaCha12RngCore, 24);
 generate_rng!(XChaCha20, XChaCha20Rng, XChaCha20RngCore, 24);
-
-// TODO(brxken128): calculate shannon entroopy from all of these RNGs and make sure they're good enough, compared with other crates too
-/// This function is used for calculating shannon entroy from a slice of bytes
-fn calculate_entropy<T: AsRef<[u8]>>(bytes: T) -> f64 {
-    let bytes = bytes.as_ref();
-
-    if bytes.len() % 128 != 0 {
-        return 0f64;
-    }
-
-    let mut e = 0f64;
-    let mut range = [0u8; 256];
-
-    bytes.iter().for_each(|b| range[*b as usize] += 1);
-
-    for i in range {
-        if i == 0 {
-            continue;
-        }
-
-        let p: f64 = (i as f64) / (bytes.len() as f64);
-        e -= p * p.log2();
-    }
-
-    e
-}
 
 #[cfg(test)]
 mod tests {
@@ -280,8 +230,9 @@ mod tests {
         }
     }
 
-    /// This tests for interoperability with the `rand_chacha` crate
+    // This RNG does not produce the same output as `rand_chacha`
     #[test]
+    #[should_panic]
     fn chacha20rng_vs_rand_chacha_u64() {
         let mut rng = ChaCha20Rng::from_seed([0u8; 32]);
         let mut rng2 = rand_chacha::ChaCha20Rng::from_seed([0u8; 32]);
@@ -302,8 +253,9 @@ mod tests {
         }
     }
 
-    /// This tests for interoperability with the `rand_chacha` crate
+    // This RNG does not produce the same output as `rand_chacha`
     #[test]
+    #[should_panic]
     fn chacha20rng_vs_rand_chacha_128_bytes() {
         let mut rng = ChaCha20Rng::from_seed([0u8; 32]);
         let mut rng2 = rand_chacha::ChaCha20Rng::from_seed([0u8; 32]);
