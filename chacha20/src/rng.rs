@@ -72,6 +72,12 @@ macro_rules! generate_rng {
             counter: u64,
         }
 
+        impl $core {
+            fn apply_keystream_4(&mut self, buf: &mut [u8]) {
+                (0..4).for_each(|_| self.cipher.apply_keystream(buf))
+            }
+        }
+
         impl SeedableRng for $core {
             type Seed = [u8; KEY_LEN];
 
@@ -94,9 +100,9 @@ macro_rules! generate_rng {
             fn generate(&mut self, results: &mut Self::Results) {
                 for i in 0..STATE_WORDS {
                     let mut o = [self.counter as u8; U32_BITS];
-                    self.cipher.apply_keystream(&mut o);
+                    self.apply_keystream_4(&mut o);
                     results[i] = as_u32(&o);
-                    self.counter += 1 + o.as_slice()[0] as u64;
+                    self.counter += 1;
                 }
             }
         }
