@@ -147,6 +147,32 @@ generate_rng!(XChaCha8, XChaCha8Rng, XChaCha8RngCore, 24);
 generate_rng!(XChaCha12, XChaCha12Rng, XChaCha12RngCore, 24);
 generate_rng!(XChaCha20, XChaCha20Rng, XChaCha20RngCore, 24);
 
+// TODO(brxken128): calculate shannon entroopy from all of these RNGs and make sure they're good enough, compared with other crates too
+/// This function is used for calculating shannon entroy from a slice of bytes
+fn calculate_entropy<T: AsRef<[u8]>>(bytes: T) -> f64 {
+    let bytes = bytes.as_ref();
+
+    if bytes.len() % 128 != 0 {
+        return 0f64;
+    }
+
+    let mut e = 0f64;
+    let mut range = [0u8; 256];
+
+    bytes.iter().for_each(|b| range[*b as usize] += 1);
+
+    for i in range {
+        if i == 0 {
+            continue;
+        }
+
+        let p: f64 = (i as f64) / (bytes.len() as f64);
+        e -= p * p.log2();
+    }
+
+    e
+}
+
 #[cfg(test)]
 mod tests {
     use super::ChaCha20Rng;
