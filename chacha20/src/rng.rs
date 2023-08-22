@@ -34,11 +34,13 @@ macro_rules! generate_rng {
 
         impl RngCore for $name {
             #[inline]
+            #[must_use]
             fn next_u32(&mut self) -> u32 {
                 self.0.next_u32()
             }
 
             #[inline]
+            #[must_use]
             fn next_u64(&mut self) -> u64 {
                 self.0.next_u64()
             }
@@ -58,9 +60,25 @@ macro_rules! generate_rng {
             type Seed = [u8; KEY_LEN];
 
             #[inline]
+            #[must_use]
             fn from_seed(seed: Self::Seed) -> Self {
                 let core = $core::from_seed(seed);
                 Self(BlockRng::new(core))
+            }
+        }
+
+        impl $name {
+            /// Attempts to create the RNG using the system's entropy sources (via the `getrandom` crate)
+            ///
+            /// Usually this will be the go-to choice as most systems have good entropy sources, and
+            /// therefore the entropy of the output will be high.
+            #[inline]
+            #[must_use]
+            pub fn from_entropy() -> Self {
+                let mut seed = [0u8; KEY_LEN];
+                getrandom::getrandom(&mut seed)
+                    .expect("We were unable to get a good entropy source via `getrandom`.");
+                Self::from_seed(seed)
             }
         }
 
@@ -73,6 +91,10 @@ macro_rules! generate_rng {
         }
 
         impl $core {
+            #[doc = "Apply a "]
+            #[doc = stringify!($cipher)]
+            #[doc = " keystream 4 times over a mutable buffer"]
+            #[inline]
             fn apply_keystream_4(&mut self, buf: &mut [u8]) {
                 (0..4).for_each(|_| self.cipher.apply_keystream(buf))
             }
@@ -82,6 +104,7 @@ macro_rules! generate_rng {
             type Seed = [u8; KEY_LEN];
 
             #[inline]
+            #[must_use]
             fn from_seed(seed: Self::Seed) -> Self {
                 let iv = [0u8; $iv_len];
 
@@ -130,6 +153,26 @@ mod tests {
     use rand_core::{RngCore, SeedableRng};
 
     #[test]
+    fn chacha20rng_fill_512_with_entropy() {
+        let mut rng = ChaCha20Rng::from_entropy();
+
+        let mut buf = [0u8; 512];
+        rng.fill_bytes(&mut buf);
+
+        assert_ne!([0u8; 512], buf);
+    }
+
+    #[test]
+    fn chacha20rng_fill_1024_with_entropy() {
+        let mut rng = ChaCha20Rng::from_entropy();
+
+        let mut buf = [0u8; 1024];
+        rng.fill_bytes(&mut buf);
+
+        assert_ne!([0u8; 1024], buf);
+    }
+
+    #[test]
     fn chacha20rng_u32_same_seed() {
         let mut rng = ChaCha20Rng::from_seed([0u8; 32]);
 
@@ -145,7 +188,7 @@ mod tests {
                 }
             }
 
-            assert!(buf1.iter().zip(buf2.iter()).any(|(x, y)| x != y))
+            assert!(buf1.iter().zip(buf2.iter()).any(|(x, y)| x != y));
         }
     }
 
@@ -166,7 +209,7 @@ mod tests {
                 }
             }
 
-            assert!(buf1.iter().zip(buf2.iter()).any(|(x, y)| x != y))
+            assert!(buf1.iter().zip(buf2.iter()).any(|(x, y)| x != y));
         }
     }
 
@@ -186,7 +229,7 @@ mod tests {
                 }
             }
 
-            assert!(buf1.iter().zip(buf2.iter()).any(|(x, y)| x != y))
+            assert!(buf1.iter().zip(buf2.iter()).any(|(x, y)| x != y));
         }
     }
 
@@ -207,7 +250,44 @@ mod tests {
                 }
             }
 
-            assert!(buf1.iter().zip(buf2.iter()).any(|(x, y)| x != y))
+            assert!(buf1.iter().zip(buf2.iter()).any(|(x, y)| x != y));
         }
+    }
+
+    /// This tests for interoperability with the `rand_chacha` crate
+    #[test]
+    fn chacha20rng_vs_rand_chacha_u64() {
+        let mut rng = ChaCha20Rng::from_seed([0u8; 32]);
+        let mut rng2 = rand_chacha::ChaCha20Rng::from_seed([0u8; 32]);
+
+        for _ in 0..8 {
+            let mut buf1 = [0u64; 32];
+            let mut buf2 = [0u64; 32];
+            for _ in 0..2 {
+                for i in 0..32 {
+                    buf1[i] = rng.next_u64();
+                }
+                for i in 0..32 {
+                    buf2[i] = rng2.next_u64();
+                }
+            }
+
+            assert!(buf1.iter().zip(buf2.iter()).all(|(x, y)| x == y));
+        }
+    }
+
+    /// This tests for interoperability with the `rand_chacha` crate
+    #[test]
+    fn chacha20rng_vs_rand_chacha_128_bytes() {
+        let mut rng = ChaCha20Rng::from_seed([0u8; 32]);
+        let mut rng2 = rand_chacha::ChaCha20Rng::from_seed([0u8; 32]);
+
+        let mut buf1 = [0u8; 128];
+        let mut buf2 = [0u8; 128];
+
+        rng.fill_bytes(&mut buf1);
+        rng2.fill_bytes(&mut buf2);
+
+        assert_eq!(buf1, buf2);
     }
 }
